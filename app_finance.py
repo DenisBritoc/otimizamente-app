@@ -78,4 +78,136 @@ with col_b2:
 
 st.divider()
 
-st.subheader("🛵 Operação
+st.subheader("🛵 Operação & Guarda")
+c1, c2, c3 = st.columns(3)
+
+with c1:
+    st.error(f"🔴 **iFood (Retido)**: R$ {dados['balances']['apps']['ifood']:.2f}")
+    ifood_val = st.number_input("Ganhos iFood", min_value=0.0, step=1.0, key="ifood_in")
+    col_btn1, col_btn2 = st.columns(2)
+    if col_btn1.button("Somar iFood"):
+        if ifood_val > 0:
+            dados["balances"]["apps"]["ifood"] += ifood_val
+            registrar_historico(dados, "Ganhos iFood", ifood_val, "Corrida", True)
+            salvar_dados(dados)
+            st.rerun()
+    if col_btn2.button("Repasse iFood", type="primary"):
+        val = dados["balances"]["apps"]["ifood"]
+        if val > 0:
+            dados["balances"]["apps"]["ifood"] = 0
+            dados["balances"]["cc"] += val
+            registrar_historico(dados, "Repasse iFood", val, "Transferência", True)
+            salvar_dados(dados)
+            st.rerun()
+
+with c2:
+    st.warning(f"🟡 **99 Entrega (Retido)**: R$ {dados['balances']['apps']['ninenine']:.2f}")
+    ninenine_val = st.number_input("Ganhos 99", min_value=0.0, step=1.0, key="nine_in")
+    col_btn3, col_btn4 = st.columns(2)
+    if col_btn3.button("Somar 99"):
+        if ninenine_val > 0:
+            dados["balances"]["apps"]["ninenine"] += ninenine_val
+            registrar_historico(dados, "Ganhos 99", ninenine_val, "Corrida", True)
+            salvar_dados(dados)
+            st.rerun()
+    if col_btn4.button("Repasse 99", type="primary"):
+        val = dados["balances"]["apps"]["ninenine"]
+        if val > 0:
+            dados["balances"]["apps"]["ninenine"] = 0
+            dados["balances"]["cc"] += val
+            registrar_historico(dados, "Repasse 99", val, "Transferência", True)
+            salvar_dados(dados)
+            st.rerun()
+
+with c3:
+    st.info("🟣 **Enviar para o Cofre**")
+    vault_val = st.number_input("Valor para guardar", min_value=0.0, step=1.0, key="vault_in")
+    if st.button("Guardar (Tira da CC)"):
+        if 0 < vault_val <= dados["balances"]["cc"]:
+            dados["balances"]["cc"] -= vault_val
+            dados["balances"]["cofre"] += vault_val
+            registrar_historico(dados, "Enviado p/ Cofre", vault_val, "Guarda", False)
+            salvar_dados(dados)
+            st.rerun()
+        else:
+            st.error("Saldo na CC insuficiente!")
+
+st.divider()
+
+st.subheader("📊 Raio-X do Rombo")
+m1, m2, m3 = st.columns(3)
+m1.metric("Buraco Atual (A Pagar)", f"R$ {total_pagar:.2f}")
+m2.metric("Esperança (A Receber)", f"R$ {total_receber:.2f}")
+m3.metric("Saldo Pós-Dívidas (Liquidez)", f"R$ {sobrevivencia:.2f}", delta="Cuidado!" if sobrevivencia < 0 else "Estável")
+
+st.divider()
+
+col_caixa, col_lanc = st.columns([1, 2])
+with col_caixa:
+    st.subheader("Caixas Principais")
+    nova_cc = st.number_input("Conta Corrente", value=float(dados["balances"]["cc"]), step=10.0)
+    novo_din = st.number_input("Dinheiro Físico", value=float(dados["balances"]["dinheiro"]), step=10.0)
+    if st.button("Atualizar Saldos Manuais"):
+        dados["balances"]["cc"] = nova_cc
+        dados["balances"]["dinheiro"] = novo_din
+        registrar_historico(dados, "Ajuste Manual", 0, "Atualização", True)
+        salvar_dados(dados)
+        st.rerun()
+
+with col_lanc:
+    st.subheader("Novo Lançamento Futuro")
+    with st.form("form_novo"):
+        c_desc, c_val, c_tipo = st.columns([2, 1, 1])
+        desc = c_desc.text_input("Descrição")
+        val = c_val.number_input("Valor", min_value=0.01, step=1.0)
+        tipo_str = c_tipo.selectbox("Tipo", ["A Pagar", "A Receber"])
+        tipo = "pay" if tipo_str == "A Pagar" else "receive"
+        
+        if st.form_submit_button("Inserir Lançamento"):
+            dados["transactions"].append({"id": dados["nextId"], "desc": desc, "val": val, "type": tipo})
+            dados["nextId"] += 1
+            salvar_dados(dados)
+            st.rerun()
+
+st.divider()
+
+st.subheader("📅 Linha do Tempo (Pendentes)")
+if not dados["transactions"]:
+    st.write("Nenhum lançamento pendente.")
+else:
+    for t in sorted(dados["transactions"], key=lambda x: x["type"]):
+        col_txt, col_val, col_act = st.columns([3, 2, 2])
+        is_rec = t["type"] == "receive"
+        cor = "🟢" if is_rec else "🔴"
+        
+        col_txt.write(f"**{t['desc']}**")
+        col_val.write(f"{cor} R$ {t['val']:.2f}")
+        
+        with col_act:
+            c_b1, c_b2 = st.columns(2)
+            if c_b1.button("✔️ Baixar", key=f"bx_{t['id']}"):
+                if is_rec:
+                    dados["balances"]["cc"] += t["val"]
+                    registrar_historico(dados, t["desc"], t["val"], "Recebido", True)
+                else:
+                    if dados["balances"]["cc"] < t["val"]:
+                        st.warning("Aviso: CC ficou negativa!")
+                    dados["balances"]["cc"] -= t["val"]
+                    registrar_historico(dados, t["desc"], t["val"], "Pago", False)
+                
+                dados["transactions"] = [x for x in dados["transactions"] if x["id"] != t["id"]]
+                salvar_dados(dados)
+                st.rerun()
+                
+            if c_b2.button("🗑️ Excluir", key=f"ex_{t['id']}"):
+                dados["transactions"] = [x for x in dados["transactions"] if x["id"] != t["id"]]
+                salvar_dados(dados)
+                st.rerun()
+
+st.divider()
+
+st.subheader("📖 Livro Caixa (Histórico Recente)")
+for h in dados["history"]:
+    cor_texto = "green" if h["positivo"] else "red"
+    sinal = "+" if h["positivo"] else "-"
+    st.markdown(f"`{h['time']}` | **{h['acao']}**: {h['desc']} | :{cor_texto}[{sinal} R$ {h['val']:.2f}]")
